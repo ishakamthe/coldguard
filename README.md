@@ -2,6 +2,8 @@
 
 **Predict before the temperature crosses the line.**
 
+**Live demo:** https://ishakamthe.github.io/coldguard/
+
 ColdGuard AI is a prototype of an AI-based predictive cold-storage excursion and early-warning system (Technology for Social Cause). Team SkinAura · team leader Pranjal Kute · Code Apex.
 
 Most cold-storage monitors raise an alarm only after a temperature limit has been crossed. ColdGuard AI looks at the trend and operating context (door state, cooling activity, ambient temperature) to estimate the probability of an excursion in the next window. It separates normal recovery from a worsening pattern and explains each warning, so staff have time to act.
@@ -152,6 +154,8 @@ See `backend/schema.sql`. The tables are `facilities`, `storage_units`, `unit_co
 Currently persisted to PostgreSQL: alert workflow state and history, preventive actions, import batches and imported readings. Predictions, alerts and simulations are computed on request. Their tables are in place for when scheduled scoring of live data is added.
 
 ## Deployment
+
+The frontend is deployed automatically to GitHub Pages by `.github/workflows/deploy.yml` on every push to `main` (enable it once under Settings → Pages → Source: GitHub Actions).
 
 The frontend and backend deploy separately:
 
