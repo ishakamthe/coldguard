@@ -1,196 +1,165 @@
 import React from 'react';
 import {
   ResponsiveContainer, ComposedChart, LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ReferenceLine, ReferenceArea, ReferenceDot, BarChart, Bar, Legend,
+  ReferenceLine, ReferenceArea, ReferenceDot, BarChart, Bar,
 } from 'recharts';
 import { clock } from '../lib/store.jsx';
 
-const C = { neon: '#55f58b', amber: '#f5b83d', coral: '#ff6b5e', teal: '#2dd4bf', grid: '#173322', muted: '#8fa89a' };
-export const UNIT_COLORS = { 'FR-01': '#55f58b', 'FR-02': '#ff6b5e', 'FR-03': '#f5b83d', 'CR-04': '#2dd4bf' };
-
-function Tip({ active, payload, label, timeOf = clock }) {
-  if (!active || !payload?.length) return null;
-  const row = payload[0].payload;
-  return (
-    <div className="chart-tip">
-      <div className="mono c-muted" style={{ marginBottom: 4 }}>{timeOf(label)} {label > 0 ? '· prediction' : label === 0 ? '· now' : ''}</div>
-      {row.temp != null && <div><span className="c-low">●</span> Measured (simulated): <b className="mono">{row.temp.toFixed(2)}°C</b></div>}
-      {row.fc != null && label > 0 && <div><span className="c-medium">●</span> Forecast: <b className="mono">{row.fc.toFixed(2)}°C</b> <span className="c-faint">({row.band[0].toFixed(1)}–{row.band[1].toFixed(1)})</span></div>}
-      {row.imported != null && <div><span className="c-teal">●</span> Imported observation: <b className="mono">{row.imported.toFixed(2)}°C</b></div>}
-      {row.door && <div className="c-medium">Door open</div>}
-      {row.cooling === false && <div className="c-faint">Cooling inactive</div>}
-    </div>
-  );
-}
-
-/* Measured history + forecast with uncertainty band, limits, now line,
-   early-warning marker and predicted crossing (only if the forecast crosses). */
-export function ForecastChart({ unit, past = 60, height = 300, showForecast = true }) {
-  const a = unit.assessment;
-  const fc = a.forecast;
-  const rows = unit.series.slice(-(past + 1)).map((r) => ({ m: r.m, temp: r.temp, door: r.door, cooling: r.cooling }));
-  const nowRow = rows[rows.length - 1];
-  if (showForecast) {
-    nowRow.fc = a.features.temp; nowRow.band = [a.features.temp, a.features.temp];
-    fc.points.forEach((p) => rows.push({ m: p.m, fc: p.temp, band: [p.lo, p.hi] }));
-  }
-  const vals = rows.flatMap((r) => [r.temp, r.fc, r.band?.[1]]).filter((v) => v != null);
-  const yMin = Math.floor(Math.min(unit.lower - 0.5, ...vals));
-  const yMax = Math.ceil(Math.max(unit.upper + 1, ...vals));
-  const maxM = showForecast ? fc.points.length : 0;
-  const warn = unit.warningM != null && unit.warningM >= -past ? unit.warningM : null;
-  const cross = showForecast ? fc.crossing : null;
-  return (
-    <div>
-      <div className="chart-legend" style={{ marginBottom: 8 }}>
-        <span><i style={{ borderColor: C.neon }} />Measured (simulated)</span>
-        {showForecast && <span><i style={{ borderColor: C.amber, borderTopStyle: 'dashed' }} />Forecast (prediction, not certain)</span>}
-        {showForecast && <span><i style={{ borderColor: 'rgba(245,184,61,.35)', borderTopWidth: 8 }} />Forecast range</span>}
-        <span><i style={{ borderColor: C.coral, borderTopStyle: 'dashed' }} />Limits {unit.lower.toFixed(1)}–{unit.upper.toFixed(1)}°C</span>
-        {warn != null && <span><i style={{ borderColor: C.amber }} />Early warning</span>}
-      </div>
-      <div style={{ width: '100%', height }}>
-        <ResponsiveContainer>
-          <ComposedChart data={rows} margin={{ top: 22, right: 18, bottom: 4, left: -8 }}>
-            <CartesianGrid stroke={C.grid} strokeDasharray="2 4" vertical={false} />
-            <XAxis dataKey="m" type="number" domain={[-past, maxM]} tickFormatter={(m) => (m === 0 ? 'now' : `${m > 0 ? '+' : ''}${m}m`)} ticks={ticksFor(-past, maxM)} stroke={C.grid} />
-            <YAxis domain={[yMin, yMax]} tickFormatter={(v) => `${v}°`} stroke={C.grid} width={44} allowDecimals={false} />
-            <Tooltip content={<Tip />} />
-            {showForecast && <ReferenceArea x1={0} x2={maxM} fill={C.amber} fillOpacity={0.04} label={{ value: `next ${maxM} min`, position: 'insideTopRight', fill: C.muted, fontSize: 11 }} />}
-            <ReferenceLine y={unit.upper} stroke={C.coral} strokeDasharray="5 4" label={{ value: `Upper ${unit.upper.toFixed(1)}°C`, position: 'insideTopLeft', fill: C.coral, fontSize: 11 }} />
-            <ReferenceLine y={unit.lower} stroke={C.teal} strokeDasharray="5 4" label={{ value: `Lower ${unit.lower.toFixed(1)}°C`, position: 'insideBottomLeft', fill: C.teal, fontSize: 11 }} />
-            <ReferenceLine x={0} stroke={C.muted} strokeDasharray="2 3" label={{ value: `Now ${clock(0)}`, position: 'top', fill: C.muted, fontSize: 11 }} />
-            {warn != null && <ReferenceLine x={warn} stroke={C.amber} label={{ value: `Early warning ${clock(warn)}`, position: 'insideTopLeft', fill: C.amber, fontSize: 11 }} />}
-            {showForecast && <Area dataKey="band" stroke="none" fill={C.amber} fillOpacity={0.14} isAnimationActive={false} connectNulls />}
-            <Line dataKey="temp" stroke={C.neon} strokeWidth={2} dot={false} isAnimationActive={false} connectNulls={false} />
-            {showForecast && <Line dataKey="fc" stroke={C.amber} strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} connectNulls />}
-            {cross && (
-              <ReferenceDot x={cross.m} y={cross.limit === 'upper' ? unit.upper : unit.lower} r={6} fill={C.coral} stroke="#1b0605"
-                label={{ value: `Possible crossing ~${clock(cross.m)}`, position: 'top', fill: C.coral, fontSize: 11 }} />
-            )}
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-}
+const THEMES = {
+  dark: { line: '#edf0f5', area: '#edf0f5', grid: '#1d2738', fc: '#8f83ff', upper: '#ff8a4c', lower: '#5f8fe8', now: '#56627a', door: '#f5c451', pillBg: '#ffffff', pillText: '#0d1117' },
+  light: { line: '#0d1117', area: '#0d1117', grid: '#eceef1', fc: '#6b5cf6', upper: '#e2621b', lower: '#2c66de', now: '#b5bac3', door: '#b97d00', pillBg: '#0b1220', pillText: '#ffffff' },
+};
+export const UNIT_COLORS = { 'FR-01': '#6b5cf6', 'FR-02': '#0d1117', 'FR-03': '#2c66de', 'CR-04': '#14a3a0' };
 
 function ticksFor(a, b) {
   const span = b - a;
-  const step = span <= 30 ? 5 : span <= 120 ? 15 : span <= 400 ? 60 : 180;
+  const step = span <= 45 ? 10 : span <= 120 ? 20 : span <= 420 ? 60 : 240;
   const out = [];
   for (let t = Math.ceil(a / step) * step; t <= b; t += step) out.push(t);
-  if (!out.includes(0) && a <= 0 && b >= 0) out.push(0);
+  if (a <= 0 && b >= 0 && !out.includes(0)) out.push(0);
   return out.sort((x, y) => x - y);
 }
 
-/* Recent readings over a selectable window, door-open spans shaded. */
-export function ReadingsChart({ unit, range, height = 280, imported }) {
-  const step = range <= 60 ? 1 : range <= 360 ? 2 : 5;
-  const series = unit.series.slice(-(range + 1));
-  const rows = series.filter((r, i) => i % step === 0 || i === series.length - 1).map((r) => ({ m: r.m, temp: r.temp, door: r.door, cooling: r.cooling }));
-  if (imported?.length) imported.forEach((p) => { if (p.m >= -range && p.m <= 0) rows.push({ m: p.m, imported: p.temp }); });
-  rows.sort((x, y) => x.m - y.m);
-  const doors = unit.doorEvents.filter((d) => d.m + d.minutes >= -range);
-  const vals = rows.flatMap((r) => [r.temp, r.imported]).filter((v) => v != null);
+/* pill label used for event markers, drawn inside the SVG */
+const Pill = (text, bg, fg, place = 'top') => function PillLabel({ viewBox }) {
+  if (!viewBox) return null;
+  const w = text.length * 6.6 + 20;
+  const cx = viewBox.x + (viewBox.width || 0) / 2;
+  const left = Math.max(2, cx - w / 2);
+  const y = place === 'top' ? (viewBox.y ?? 0) + 4 : (viewBox.y ?? 0) - 28;
   return (
-    <div style={{ width: '100%', height }}>
+    <g style={{ pointerEvents: 'none' }}>
+      <rect x={left} y={y} width={w} height={22} rx={11} fill={bg} />
+      <text x={left + w / 2} y={y + 15} textAnchor="middle" fill={fg} fontSize="11.5" fontFamily="Geist, Inter, sans-serif">{text}</text>
+    </g>
+  );
+};
+
+function TempTip({ active, payload, label, fmt }) {
+  if (!active || !payload?.length) return null;
+  const r = payload[0].payload;
+  return (
+    <div className="tip">
+      <div className="h">{fmt(label)}{label > 0 ? ' · forecast' : label === 0 ? ' · now' : ''}</div>
+      {r.temp != null && <div className="r"><span className="c-muted">Measured</span><b className="num" style={{ fontWeight: 500 }}>{r.temp.toFixed(2)} °C</b></div>}
+      {r.fc != null && label > 0 && <div className="r"><span className="c-muted">Forecast</span><b className="num" style={{ fontWeight: 500 }}>{r.fc.toFixed(2)} °C</b></div>}
+      {r.band && label > 0 && <div className="r"><span className="c-muted">Range</span><span className="num">{r.band[0].toFixed(1)}–{r.band[1].toFixed(1)}</span></div>}
+      {r.imported != null && <div className="r"><span className="c-muted">Imported</span><b className="num">{r.imported.toFixed(2)} °C</b></div>}
+      {r.door && <div className="r"><span className="c-warn">Door open</span></div>}
+      {r.cooling === false && label <= 0 && <div className="r"><span className="c-muted">Cooling off</span></div>}
+    </div>
+  );
+}
+
+/*
+ * Measured history + forecast for one unit.
+ * series: rows with m (minutes relative to now), temp, door, cooling
+ * assessment: engine output (forecast + features)
+ */
+export function TempChart({ series, assessment, upper, lower, past = 60, height = 300, theme = 'dark', warnAt = null, showForecast = true, fmt = clock, imported, nowLabel = 'Now', animate = true }) {
+  const T = THEMES[theme];
+  const fc = assessment.forecast;
+  const step = past <= 120 ? 1 : past <= 400 ? 3 : 6;
+  const src = series.slice(-(past + 1));
+  const rows = src.filter((r, i) => i % step === 0 || i === src.length - 1).map((r) => ({ m: r.m, temp: r.temp, door: r.door, cooling: r.cooling }));
+  const lastM = rows[rows.length - 1].m;
+  if (showForecast) {
+    rows[rows.length - 1].fc = assessment.features.temp;
+    rows[rows.length - 1].band = [assessment.features.temp, assessment.features.temp];
+    fc.points.forEach((p) => rows.push({ m: lastM + p.m, fc: p.temp, band: [p.lo, p.hi] }));
+  }
+  if (imported?.length) imported.forEach((p) => { if (p.m >= lastM - past && p.m <= lastM) rows.push({ m: p.m, imported: p.temp }); });
+  rows.sort((a, b) => a.m - b.m);
+  const vals = rows.flatMap((r) => [r.temp, r.fc, r.band?.[1], r.imported]).filter((v) => v != null);
+  const yMin = Math.floor(Math.min(lower - 0.5, ...vals));
+  const yMax = Math.ceil(Math.max(upper + 1, ...vals));
+  const x0 = lastM - past;
+  const x1 = lastM + (showForecast ? fc.points.length : 0);
+  const doors = [];
+  src.forEach((r, i) => { if (r.door && !src[i - 1]?.door) doors.push({ a: r.m, b: r.m + 1 }); else if (r.door) doors[doors.length - 1].b = r.m + 1; });
+  const cross = showForecast ? fc.crossing : null;
+  const gid = `g-${theme}-${Math.round(upper * 10)}`;
+  return (
+    <div style={{ width: '100%', height }} className={theme === 'light' ? 'lightchart' : ''}>
       <ResponsiveContainer>
-        <ComposedChart data={rows} margin={{ top: 16, right: 16, bottom: 4, left: -8 }}>
-          <CartesianGrid stroke={C.grid} strokeDasharray="2 4" vertical={false} />
-          <XAxis dataKey="m" type="number" domain={[-range, 0]} ticks={ticksFor(-range, 0)} tickFormatter={(m) => clock(m)} stroke={C.grid} />
-          <YAxis domain={[Math.floor(Math.min(unit.lower - 0.5, ...vals)), Math.ceil(Math.max(unit.upper + 0.5, ...vals))]} tickFormatter={(v) => `${v}°`} stroke={C.grid} width={44} />
-          <Tooltip content={<Tip />} />
-          {doors.map((d) => <ReferenceArea key={d.m} x1={Math.max(d.m, -range)} x2={d.m + d.minutes} fill={C.amber} fillOpacity={0.16} />)}
-          <ReferenceLine y={unit.upper} stroke={C.coral} strokeDasharray="5 4" />
-          <ReferenceLine y={unit.lower} stroke={C.teal} strokeDasharray="5 4" />
-          <Line dataKey="temp" stroke={C.neon} strokeWidth={1.8} dot={false} isAnimationActive={false} connectNulls={false} />
-          {imported?.length ? <Line dataKey="imported" stroke={C.teal} strokeWidth={0} dot={{ r: 2, fill: C.teal }} isAnimationActive={false} /> : null}
+        <ComposedChart data={rows} margin={{ top: 34, right: 12, bottom: 0, left: -14 }}>
+          <defs>
+            <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={T.area} stopOpacity={theme === 'dark' ? 0.16 : 0.08} />
+              <stop offset="100%" stopColor={T.area} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke={T.grid} vertical={false} />
+          <XAxis dataKey="m" type="number" domain={[x0, x1]} ticks={ticksFor(x0, x1)} tickFormatter={(m) => (m === lastM ? nowLabel : fmt(m))} stroke="transparent" tickMargin={8} />
+          <YAxis domain={[yMin, yMax]} allowDecimals={false} tickFormatter={(v) => `${v}°`} stroke="transparent" width={44} />
+          <Tooltip content={<TempTip fmt={fmt} />} cursor={{ stroke: T.now, strokeDasharray: '3 3' }} />
+          {doors.map((d) => <ReferenceArea key={d.a} x1={Math.max(d.a, x0)} x2={d.b} fill={T.door} fillOpacity={0.12} />)}
+          {showForecast && <ReferenceArea x1={lastM} x2={x1} fill={T.fc} fillOpacity={theme === 'dark' ? 0.06 : 0.04} />}
+          <ReferenceLine y={upper} stroke={T.upper} strokeDasharray="5 5" label={{ value: `${upper.toFixed(1)} °C limit`, position: 'insideTopRight', fill: T.upper, fontSize: 11.5 }} />
+          <ReferenceLine y={lower} stroke={T.lower} strokeDasharray="5 5" strokeOpacity={0.6} />
+          <ReferenceLine x={lastM} stroke={T.now} strokeDasharray="3 3" />
+          {warnAt != null && warnAt >= x0 && <ReferenceLine x={warnAt} stroke={T.upper} label={Pill(`Early warning ${fmt(warnAt)}`, '#e2621b', '#fff')} />}
+          <Area dataKey="temp" stroke="none" fill={`url(#${gid})`} isAnimationActive={animate} animationDuration={900} connectNulls={false} />
+          {showForecast && <Area dataKey="band" stroke="none" fill={T.fc} fillOpacity={0.18} isAnimationActive={animate} animationBegin={600} animationDuration={700} connectNulls />}
+          <Line dataKey="temp" stroke={T.line} strokeWidth={2} dot={false} isAnimationActive={animate} animationDuration={900} connectNulls={false} />
+          {showForecast && <Line dataKey="fc" stroke={T.fc} strokeWidth={2} strokeDasharray="6 5" dot={false} isAnimationActive={animate} animationBegin={600} animationDuration={700} connectNulls />}
+          {imported?.length ? <Line dataKey="imported" stroke="none" dot={{ r: 2.5, fill: '#14a3a0', stroke: 'none' }} isAnimationActive={false} /> : null}
+          <ReferenceDot x={lastM} y={assessment.features.temp} r={4.5} fill={T.line} stroke={theme === 'dark' ? '#0b1220' : '#fff'} strokeWidth={2} />
+          {cross && <ReferenceDot x={lastM + cross.m} y={cross.limit === 'upper' ? upper : lower} r={6} fill="#e2621b" stroke={theme === 'dark' ? '#0b1220' : '#fff'} strokeWidth={2} label={Pill(`Crosses ~${fmt(lastM + cross.m)}`, T.pillBg, T.pillText, 'above')} />}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-export function MultiTrend({ units, range, height = 280, valueKey = 'temp', fromHistory = false, yLabel = '°C' }) {
+export function TrendLines({ units, range, height = 280, fromHistory = false, unit = '°C' }) {
   const map = new Map();
   units.forEach((u) => {
     const src = fromHistory ? u.history : u.series;
-    const step = fromHistory ? 1 : range <= 360 ? 2 : 5;
+    const step = fromHistory ? 1 : range <= 360 ? 3 : 6;
     src.forEach((r, i) => {
       if (r.m < -range || (!fromHistory && i % step !== 0)) return;
       const row = map.get(r.m) || { m: r.m };
-      row[u.id] = fromHistory ? r[valueKey] : r.temp;
+      row[u.id] = fromHistory ? r.probability : r.temp;
       map.set(r.m, row);
     });
   });
   const rows = [...map.values()].sort((a, b) => a.m - b.m);
+  const pct = unit === '%';
   return (
-    <div style={{ width: '100%', height }}>
+    <div style={{ width: '100%', height }} className="lightchart">
       <ResponsiveContainer>
-        <LineChart data={rows} margin={{ top: 10, right: 16, bottom: 4, left: -8 }}>
-          <CartesianGrid stroke={C.grid} strokeDasharray="2 4" vertical={false} />
-          <XAxis dataKey="m" type="number" domain={[-range, 0]} ticks={ticksFor(-range, 0)} tickFormatter={(m) => clock(m)} stroke={C.grid} />
-          <YAxis stroke={C.grid} width={44} tickFormatter={(v) => `${v}${yLabel === '%' ? '%' : '°'}`} domain={yLabel === '%' ? [0, 100] : ['auto', 'auto']} />
-          <Tooltip contentStyle={{ background: '#050907', border: '1px solid #2a5a3e', borderRadius: 8, fontSize: 12 }} labelFormatter={(m) => clock(m)} formatter={(v, n) => [v == null ? '—' : `${v.toFixed?.(yLabel === '%' ? 0 : 2) ?? v}${yLabel}`, n]} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          {units.map((u) => <Line key={u.id} dataKey={u.id} stroke={UNIT_COLORS[u.id]} dot={false} strokeWidth={1.6} isAnimationActive={false} connectNulls={fromHistory} />)}
+        <LineChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: -14 }}>
+          <CartesianGrid stroke="#eceef1" vertical={false} />
+          <XAxis dataKey="m" type="number" domain={[-range, 0]} ticks={ticksFor(-range, 0)} tickFormatter={(m) => (m === 0 ? 'Now' : clock(m))} stroke="transparent" tickMargin={8} />
+          <YAxis stroke="transparent" width={44} tickFormatter={(v) => `${v}${pct ? '%' : '°'}`} domain={pct ? [0, 100] : ['auto', 'auto']} />
+          <Tooltip
+            content={({ active, payload, label }) => (active && payload?.length ? (
+              <div className="tip"><div className="h">{clock(label)}</div>{payload.map((p) => <div className="r" key={p.dataKey}><span><i className="dot" style={{ background: p.color }} />{p.dataKey}</span><b className="num" style={{ fontWeight: 500 }}>{p.value == null ? '—' : `${p.value.toFixed(pct ? 0 : 2)}${pct ? '%' : ' °C'}`}</b></div>)}</div>
+            ) : null)}
+          />
+          {units.map((u) => <Line key={u.id} dataKey={u.id} stroke={UNIT_COLORS[u.id]} dot={false} strokeWidth={1.7} isAnimationActive animationDuration={900} connectNulls={fromHistory} />)}
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-export function RiskDistribution({ data, height = 240 }) {
+export function RiskBars({ data, height = 250 }) {
   return (
-    <div style={{ width: '100%', height }}>
+    <div style={{ width: '100%', height }} className="lightchart">
       <ResponsiveContainer>
-        <BarChart data={data} margin={{ top: 10, right: 10, bottom: 4, left: -16 }}>
-          <CartesianGrid stroke={C.grid} strokeDasharray="2 4" vertical={false} />
-          <XAxis dataKey="id" stroke={C.grid} />
-          <YAxis stroke={C.grid} tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
-          <Tooltip contentStyle={{ background: '#050907', border: '1px solid #2a5a3e', borderRadius: 8, fontSize: 12 }} formatter={(v, n) => [`${v.toFixed(1)}% of time`, n]} cursor={{ fill: 'rgba(85,245,139,.05)' }} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Bar dataKey="Low" stackId="a" fill={C.neon} fillOpacity={0.75} />
-          <Bar dataKey="Medium" stackId="a" fill={C.amber} />
-          <Bar dataKey="High" stackId="a" fill={C.coral} radius={[4, 4, 0, 0]} />
+        <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }} barCategoryGap="28%">
+          <CartesianGrid stroke="#eceef1" vertical={false} />
+          <XAxis dataKey="id" stroke="transparent" tickMargin={8} />
+          <YAxis stroke="transparent" tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
+          <Tooltip cursor={{ fill: 'rgba(13,17,23,0.04)' }} content={({ active, payload, label }) => (active && payload?.length ? (
+            <div className="tip"><div className="h">{label}</div>{payload.slice().reverse().map((p) => <div className="r" key={p.dataKey}><span><i className="dot" style={{ background: p.fill }} />{p.dataKey}</span><span className="num">{p.value.toFixed(0)}% of time</span></div>)}</div>
+          ) : null)} />
+          <Bar dataKey="Low" stackId="a" fill="#d6dae1" isAnimationActive animationDuration={800} />
+          <Bar dataKey="Medium" stackId="a" fill="#f0b429" isAnimationActive animationDuration={800} />
+          <Bar dataKey="High" stackId="a" fill="#e2621b" radius={[6, 6, 0, 0]} isAnimationActive animationDuration={800} />
         </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-/* Simulator chart: x = simulated minutes since start */
-export function SimChart({ series, assessment, upper, lower, height = 320 }) {
-  const lastM = series[series.length - 1].m;
-  const rows = series.filter((r) => r.m >= lastM - 90).map((r) => ({ m: r.m, temp: r.temp, door: r.door, cooling: r.cooling }));
-  const now = rows[rows.length - 1];
-  now.fc = assessment.features.temp; now.band = [now.fc, now.fc];
-  assessment.forecast.points.forEach((p) => rows.push({ m: lastM + p.m, fc: p.temp, band: [p.lo, p.hi] }));
-  const vals = rows.flatMap((r) => [r.temp, r.band?.[1]]).filter((v) => v != null);
-  const cross = assessment.forecast.crossing;
-  const doorSpans = [];
-  rows.forEach((r, i) => { if (r.door && !(rows[i - 1]?.door)) doorSpans.push({ a: r.m, b: r.m }); if (r.door) doorSpans[doorSpans.length - 1].b = r.m; });
-  const timeOf = (m) => `t ${m >= 0 ? '+' : ''}${m} min`;
-  return (
-    <div style={{ width: '100%', height }}>
-      <ResponsiveContainer>
-        <ComposedChart data={rows} margin={{ top: 22, right: 18, bottom: 4, left: -8 }}>
-          <CartesianGrid stroke={C.grid} strokeDasharray="2 4" vertical={false} />
-          <XAxis dataKey="m" type="number" domain={[rows[0].m, rows[rows.length - 1].m]} ticks={ticksFor(rows[0].m, rows[rows.length - 1].m)} tickFormatter={(m) => `${m}m`} stroke={C.grid} />
-          <YAxis domain={[Math.floor(Math.min(lower - 0.5, ...vals)), Math.ceil(Math.max(upper + 1, ...vals))]} tickFormatter={(v) => `${v}°`} stroke={C.grid} width={44} />
-          <Tooltip content={<Tip timeOf={timeOf} />} />
-          {doorSpans.map((d) => <ReferenceArea key={d.a} x1={d.a} x2={d.b + 1} fill={C.amber} fillOpacity={0.16} />)}
-          <ReferenceArea x1={lastM} x2={lastM + assessment.forecast.points.length} fill={C.amber} fillOpacity={0.04} />
-          <ReferenceLine y={upper} stroke={C.coral} strokeDasharray="5 4" label={{ value: `Upper ${upper.toFixed(1)}°C`, position: 'insideTopLeft', fill: C.coral, fontSize: 11 }} />
-          <ReferenceLine y={lower} stroke={C.teal} strokeDasharray="5 4" />
-          <ReferenceLine x={lastM} stroke={C.muted} strokeDasharray="2 3" label={{ value: 'sim now', position: 'top', fill: C.muted, fontSize: 11 }} />
-          <ReferenceLine x={0} stroke="#2a5a3e" label={{ value: 'start', position: 'insideBottomRight', fill: C.muted, fontSize: 10 }} />
-          <Area dataKey="band" stroke="none" fill={C.amber} fillOpacity={0.14} isAnimationActive={false} connectNulls />
-          <Line dataKey="temp" stroke={C.neon} strokeWidth={2} dot={false} isAnimationActive={false} />
-          <Line dataKey="fc" stroke={C.amber} strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} connectNulls />
-          {cross && <ReferenceDot x={lastM + cross.m} y={cross.limit === 'upper' ? upper : lower} r={6} fill={C.coral} stroke="#1b0605" label={{ value: `crossing in ~${cross.m} min`, position: 'top', fill: C.coral, fontSize: 11 }} />}
-        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

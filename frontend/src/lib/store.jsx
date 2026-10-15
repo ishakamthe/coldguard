@@ -3,12 +3,12 @@ import E from './engine.js';
 import { api } from './api.js';
 
 /*
- * Application state for the demo.
- * Persistence: browser localStorage (demo-only). The shapes below mirror the
+ * Application state.
+ * Persistence: browser localStorage. The shapes below mirror the
  * PostgreSQL tables in backend/schema.sql (alert_events, preventive_actions,
  * import_batches, unit_configs) so they can move to the API later.
  */
-const STORAGE_KEY = 'coldguard-demo-v1';
+const STORAGE_KEY = 'coldguard-v2';
 export const NOW = Math.floor(Date.now() / 60000) * 60000; // simulated snapshot time, fixed per page load
 
 export const DEFAULT_SETTINGS = {
@@ -40,12 +40,12 @@ function reducer(state, a) {
       return { ...state, settings: a.settings, activity: log('settings', a.note || 'Settings updated') };
     case 'workflow': {
       const cur = state.workflow[a.alertId] || { status: 'new', history: [] };
-      const entry = { id: uid('H'), at: Date.now(), kind: a.kind, text: a.text, by: state.settings.report.author || 'Demo user', from: cur.status, to: a.status || cur.status };
+      const entry = { id: uid('H'), at: Date.now(), kind: a.kind, text: a.text, by: state.settings.report.author || 'Operator', from: cur.status, to: a.status || cur.status };
       const next = { ...cur, status: a.status || cur.status, history: [...cur.history, entry] };
       return { ...state, workflow: { ...state.workflow, [a.alertId]: next }, activity: log(a.kind, a.log, a.unitId) };
     }
     case 'action': {
-      const act = { id: uid('ACT'), at: Date.now(), status: 'planned', by: state.settings.report.author || 'Demo user', ...a.action };
+      const act = { id: uid('ACT'), at: Date.now(), status: 'planned', by: state.settings.report.author || 'Operator', ...a.action };
       let workflow = state.workflow;
       if (act.alertId) {
         const cur = workflow[act.alertId] || { status: 'new', history: [] };
@@ -71,7 +71,7 @@ function reducer(state, a) {
     case 'log':
       return { ...state, activity: log(a.kind, a.text, a.unitId) };
     case 'reset':
-      return { ...INITIAL, activity: [{ id: uid('EV'), at: Date.now(), type: 'reset', text: 'Demo data reset to seed values', source: 'user' }] };
+      return { ...INITIAL, activity: [{ id: uid('EV'), at: Date.now(), type: 'reset', text: 'Data reset to defaults', source: 'user' }] };
     default:
       return state;
   }
@@ -115,7 +115,7 @@ function deriveAlerts(unit, history, assessment, simulated) {
         action: isLast ? assessment.action : cur.snap.action,
         crossing: isLast ? assessment.forecast.crossing : cur.snap.crossing,
         condition: isLast ? 'active' : 'subsided',
-        source: simulated ? 'Simulator' : 'Synthetic history',
+        source: simulated ? 'Simulator' : 'Monitoring',
         detail: isLast ? assessment : null,
       });
       cur = null;
@@ -180,6 +180,7 @@ export function StoreProvider({ children }) {
   const [sim, setSim] = useState(() => ({ target: 'FR-02', attached: true, running: false, speed: 2, lastCat: 'Low', params: DEFAULT_SIM, state: E.createSim(DEFAULT_SIM) }));
   const [toasts, setToasts] = useState([]);
   const [selectedUnit, setSelectedUnit] = useState('FR-02');
+  const [actionFor, setActionFor] = useState(null); // { unitId, alertId } opens the record-action sheet
   const [backend, setBackend] = useState({ status: api.configured ? 'checking' : 'not-configured' });
 
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* storage unavailable: state stays in memory */ } }, [state]);
@@ -188,10 +189,11 @@ export function StoreProvider({ children }) {
     api.health().then(() => setBackend({ status: 'online' })).catch((e) => setBackend({ status: 'offline', error: e.message }));
   }, []);
 
-  const toast = useCallback((msg, kind = 'ok') => {
+  const dismissToast = useCallback((id) => setToasts((t) => t.filter((x) => x.id !== id)), []);
+  const toast = useCallback((msg, kind = 'ok', sub) => {
     const id = uid('T');
-    setToasts((t) => [...t, { id, msg, kind }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
+    setToasts((t) => [...t.slice(-2), { id, msg, kind, sub }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4600);
   }, []);
 
   // simulator playback runs here so every page reflects it while it plays
@@ -259,7 +261,7 @@ export function StoreProvider({ children }) {
   }, [units, state.simAlerts, state.workflow]);
 
   const value = {
-    state, dispatch, settings, units, alerts, sim, setSim, toast, toasts, selectedUnit, setSelectedUnit, backend, setBackend,
+    state, dispatch, settings, units, alerts, sim, setSim, toast, toasts, dismissToast, selectedUnit, setSelectedUnit, backend, setBackend, actionFor, setActionFor,
     unit: (id) => units.find((u) => u.id === id) || units[0],
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

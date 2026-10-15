@@ -20,7 +20,7 @@ coldguard/
 │   ├── src/lib/engine.js     Demo engine: synthetic data, features, forecast, risk, anomaly, simulator
 │   ├── src/lib/store.jsx     App state, alert derivation, simulator playback, persistence (localStorage)
 │   ├── src/lib/api.js        REST client (used when VITE_API_URL is set)
-│   ├── src/pages/            12 sections (Overview … About)
+│   ├── src/pages/            Home, Units, Simulator, Alerts, Analytics, Data, Reports, About, Settings
 │   ├── src/components/       Charts, unit cards, risk panels, alert/action forms
 │   └── scripts/              build-single.mjs (one-file HTML build), engine-check.mjs
 ├── backend/                  Python + FastAPI + Pydantic
@@ -93,6 +93,8 @@ There are four units at "City General Hospital", each with 24 hours of one-minut
 | CR-04 Cold room | Normal cycling, a few missing readings | Low (~7%) |
 
 The presentation's illustrative figures (FR-02 at 6.8 °C / 81%, FR-03 at 38%, and so on) were the target. The engine *computes* its values from the synthetic readings, so they land close to those figures but not exactly on them. Nothing is hardcoded.
+
+**Pages.** Home (briefing, needs-attention queue, unit overview), Units (one unit in depth: readings with forecast, risk explanation, sensor state, recommended action), Simulator, Alerts (alert workflow and preventive actions), Analytics (hour-by-hour risk map and history), Data (CSV import and data quality), Reports, About and Settings. Each feature lives on one page.
 
 **Scenario simulator.** It offers five scenarios: Normal, Door open, Slow degradation, Sudden cooling failure, and Failure then recovery. You can set ambient temperature, initial temperature, upper limit and event duration, override the door or cooling state, and choose 1×–10× playback. The run drives one chosen unit across the whole dashboard. Alerts are raised when risk rises into Medium or High.
 

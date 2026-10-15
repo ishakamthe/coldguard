@@ -8,7 +8,7 @@ const css = readFileSync(join(dist, 'assets', assets.find((f) => f.endsWith('.cs
 const out = process.argv[2] || join(dist, 'coldguard-single.html');
 const html = `<title>ColdGuard AI</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>${css}</style>
 <div id="root"></div>
 <script type="module">${js}</script>
