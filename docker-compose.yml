@@ -1,0 +1,30 @@
+# Local full stack: PostgreSQL + FastAPI + static frontend.
+# Copy .env.example to .env first and set POSTGRES_PASSWORD.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: coldguard
+      POSTGRES_USER: coldguard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coldguard"]
+      interval: 5s
+      retries: 10
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://coldguard:${POSTGRES_PASSWORD}@db:5432/coldguard
+      CORS_ORIGINS: http://localhost:8080
+    ports: ["8000:8000"]
+    depends_on:
+      db: { condition: service_healthy }
+  web:
+    build:
+      context: ./frontend
+      args: { VITE_API_URL: "http://localhost:8000" }
+    ports: ["8080:80"]
+    depends_on: [api]
+volumes:
+  pgdata:
